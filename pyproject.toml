@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "authorization-service-operator-shared"
+version = "0.1.0"
+description = "Shared Python library for Charmed Authorization Service operator family"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "ops>=2.0.0",
+    "pydantic>=2.0.0",
+    "charmlibs-interfaces-istio-ingress-route",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[dependency-groups]
+fmt = [
+    "isort",
+    "ruff",
+]
+lint = [
+    "codespell",
+    "isort",
+    "ruff",
+]
+unit = [
+    "coverage[toml]",
+    "ops[testing]",
+    "pytest",
+    "pytest-mock",
+]
+dev = [
+    { include-group = "fmt" },
+    { include-group = "lint" },
+    { include-group = "unit" },
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.codespell]
+skip = ".git,.tox,build,dist,venv,.venv,.mypy_cache,__pycache__"
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "BLE001",  # Allow catching blind Exception inside dynamic Juju relation hooks
+]
+
