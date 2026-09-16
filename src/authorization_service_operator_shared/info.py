@@ -3,12 +3,13 @@
 
 """Interface module for sharing Authorization Service info across components.
 
-Provides provider and requirer components for sharing deployment info such as workload version
-and database migration state via the authorization-service-info relation.
+Provides provider and requirer components for sharing deployment info such as workload version,
+database migration state, and database credentials via the authorization-service-info relation.
 """
 
 import logging
 
+from ops import ModelError, SecretNotFoundError
 from ops.charm import (
     CharmBase,
     HookEvent,
@@ -17,7 +18,7 @@ from ops.charm import (
     RelationCreatedEvent,
 )
 from ops.framework import EventBase, EventSource, Object, ObjectEvents
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 DEFAULT_RELATION_NAME = "authorization-service-info"
 
@@ -31,6 +32,13 @@ class AuthorizationServiceInfo(BaseModel):
     migration_version: str = ""
     openfga_store_id: str = ""
     openfga_model_id: str = ""
+    db_host: str = ""
+    db_port: str = ""
+    db_name: str = ""
+    db_user: str = ""
+    db_secret_id: str = ""
+
+    db_password: str | None = Field(default=None, exclude=True)
 
     @property
     def is_migration_ready(self) -> bool:
@@ -43,9 +51,14 @@ class AuthorizationServiceInfo(BaseModel):
         return bool(self.openfga_store_id and self.openfga_model_id)
 
     @property
+    def is_db_ready(self) -> bool:
+        """True when database connection details are present."""
+        return bool(self.db_host and self.db_port and self.db_name and self.db_user and self.db_password)
+
+    @property
     def is_ready(self) -> bool:
-        """True when workload version, migration version, store ID, and model ID are present."""
-        return self.is_migration_ready and self.is_openfga_ready
+        """True when workload version, migration version, store ID, model ID, and DB details are present."""
+        return self.is_migration_ready and self.is_openfga_ready and self.is_db_ready
 
 
 class AuthorizationServiceInfoRelationError(Exception):
@@ -113,14 +126,24 @@ class AuthorizationServiceInfoProvider(Object):
         migration_version: str = "",
         openfga_store_id: str = "",
         openfga_model_id: str = "",
+        db_host: str = "",
+        db_port: str = "",
+        db_name: str = "",
+        db_user: str = "",
+        db_password: str = "",
     ) -> None:
-        """Publish workload version, migration version, and OpenFGA parameters into application relation data.
+        """Publish workload version, migration version, OpenFGA parameters, and DB credentials into application relation data.
 
         Args:
             workload_version: The workload version string.
             migration_version: The database migration version string.
             openfga_store_id: The OpenFGA store ID created by server.
             openfga_model_id: The OpenFGA authorization model ID created by server.
+            db_host: The PostgreSQL database host.
+            db_port: The PostgreSQL database port.
+            db_name: The PostgreSQL database name.
+            db_user: The PostgreSQL database username.
+            db_password: The PostgreSQL database password (will be granted via Juju secret).
         """
         if not self._charm.unit.is_leader():
             return
@@ -129,6 +152,30 @@ class AuthorizationServiceInfoProvider(Object):
         if not relations:
             return
 
+        db_secret_id = ""
+        if db_password:
+            label = f"{self._charm.app.name}-db-credentials"
+            secret_content = {"db-password": db_password}
+            try:
+                secret = self._charm.model.get_secret(label=label)
+                secret.set_content(secret_content)
+            except SecretNotFoundError:
+                secret = self._charm.app.add_secret(
+                    secret_content,
+                    label=label,
+                )
+            db_secret_id = secret.id
+            for relation in relations:
+                try:
+                    secret.grant(relation)
+                except ModelError as exc:
+                    logger.debug(
+                        "Failed to grant secret %s to relation %s: %s",
+                        secret.id,
+                        relation.id,
+                        exc,
+                    )
+
         mig_version = migration_version or ""
         for relation in relations:
             databag = relation.data[self._charm.app]
@@ -136,13 +183,20 @@ class AuthorizationServiceInfoProvider(Object):
             databag["migration_version"] = mig_version
             databag["openfga_store_id"] = openfga_store_id
             databag["openfga_model_id"] = openfga_model_id
+            databag["db_host"] = db_host
+            databag["db_port"] = db_port
+            databag["db_name"] = db_name
+            databag["db_user"] = db_user
+            databag["db_secret_id"] = db_secret_id
             logger.debug(
-                "Updated relation %s data with workload_version=%s, migration_version=%s, openfga_store_id=%s, openfga_model_id=%s",
+                "Updated relation %s data with workload_version=%s, migration_version=%s, openfga_store_id=%s, openfga_model_id=%s, db_host=%s, db_user=%s",
                 relation.id,
                 workload_version,
                 mig_version,
                 openfga_store_id,
                 openfga_model_id,
+                db_host,
+                db_user,
             )
 
 
@@ -172,8 +226,12 @@ class AuthorizationServiceInfoRequirer(Object):
             self._charm.on[self._relation_name].relation_broken,
             self._on_relation_broken,
         )
+        self.framework.observe(
+            self._charm.on.secret_changed,
+            self._on_relation_changed,
+        )
 
-    def _on_relation_changed(self, event: RelationCreatedEvent | RelationChangedEvent) -> None:
+    def _on_relation_changed(self, event: RelationCreatedEvent | RelationChangedEvent | HookEvent) -> None:
         self.on.authorization_service_info_updated.emit()
 
     def _on_relation_broken(self, event: RelationBrokenEvent) -> None:
@@ -195,11 +253,27 @@ class AuthorizationServiceInfoRequirer(Object):
 
         databag = relation.data[relation.app]
         try:
+            db_secret_id = databag.get("db_secret_id", "")
+            db_password = None
+            if db_secret_id:
+                try:
+                    secret = self._charm.model.get_secret(id=db_secret_id)
+                    secret_content = secret.get_content()
+                    db_password = secret_content.get("db-password", "")
+                except (SecretNotFoundError, ModelError) as exc:
+                    logger.warning("Failed to retrieve database secret %s: %s", db_secret_id, exc)
+
             return AuthorizationServiceInfo(
                 workload_version=databag.get("workload_version", ""),
                 migration_version=databag.get("migration_version", ""),
                 openfga_store_id=databag.get("openfga_store_id", ""),
                 openfga_model_id=databag.get("openfga_model_id", ""),
+                db_host=databag.get("db_host", ""),
+                db_port=databag.get("db_port", ""),
+                db_name=databag.get("db_name", ""),
+                db_user=databag.get("db_user", ""),
+                db_secret_id=db_secret_id,
+                db_password=db_password,
             )
         except ValidationError as exc:
             logger.warning("Failed to parse authorization service info: %s", exc)
