@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Authorization Service Info Relation Provider
-`AuthorizationServiceInfoProvider` SHALL handle `relation_joined` on the `authorization-service-info` endpoint, emit `AuthorizationServiceInfoRelationReadyEvent`, and allow leader units to publish `workload_version` and `migration_version` to the application databag.
+`AuthorizationServiceInfoProvider` SHALL handle `relation_joined` on the `authorization-service-info` endpoint, emit `AuthorizationServiceInfoRelationReadyEvent`, manage Juju secrets for database credentials (`db-password`), grant secret access to connected relations, and allow leader units to publish version, OpenFGA model ID, and database connection details to the application databag.
 
-#### Scenario: Leader unit publishes versions
-- **WHEN** `publish_info(workload_version, migration_version)` is called on a leader unit
-- **THEN** it SHALL write `workload_version` and `migration_version` into `relation.data[self.charm.app]`.
+#### Scenario: Leader unit publishes info and database secret
+- **WHEN** `publish_info(...)` is called on a leader unit with `db_password`
+- **THEN** it SHALL create or update a Juju secret with content `{"db-password": db_password}`, grant access to connected `authorization-service-info` relations, and write `workload_version`, `migration_version`, `openfga_store_id`, `openfga_model_id`, `db_host`, `db_port`, `db_name`, `db_user`, and `db_secret_id` into `relation.data[self.charm.app]`.
 
 #### Scenario: Non-leader unit publish call
 - **WHEN** `publish_info(...)` is called on a non-leader unit
@@ -16,11 +16,11 @@
 - **THEN** `AuthorizationServiceInfoProvider` SHALL emit `AuthorizationServiceInfoRelationReadyEvent`.
 
 ### Requirement: Authorization Service Info Relation Requirer
-`AuthorizationServiceInfoRequirer` SHALL handle `relation_broken`, emit `AuthorizationServiceInfoBrokenEvent`, and parse `AuthorizationServiceInfo` from the relation application databag.
+`AuthorizationServiceInfoRequirer` SHALL handle `relation_broken`, emit `AuthorizationServiceInfoBrokenEvent`, retrieve database secrets using `db_secret_id`, and parse `AuthorizationServiceInfo` from the relation application databag.
 
 #### Scenario: Reading valid info from databag
-- **WHEN** `get_info()` is called and a valid relation exists with `workload_version` and `migration_version`
-- **THEN** it SHALL return an `AuthorizationServiceInfo` object with `is_ready` evaluating to `True`.
+- **WHEN** `get_info()` is called and a valid relation exists with `workload_version`, `migration_version`, and database credentials/secret ID
+- **THEN** it SHALL fetch the secret content for `db_secret_id` and return an `AuthorizationServiceInfo` object with `is_ready`, `is_migration_ready`, and `is_db_ready` evaluating to `True`.
 
 #### Scenario: Reading when no relation exists
 - **WHEN** `get_info()` is called and no `authorization-service-info` relation exists
