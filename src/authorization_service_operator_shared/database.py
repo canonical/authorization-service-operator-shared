@@ -61,6 +61,19 @@ class DatabaseConfig:
         }
 
     @classmethod
+    def from_info(cls, info) -> "DatabaseConfig":
+        """Load database settings from AuthorizationServiceInfo."""
+        if not info:
+            return cls()
+        return cls(
+            host=getattr(info, "db_host", ""),
+            port=getattr(info, "db_port", ""),
+            dbname=getattr(info, "db_name", ""),
+            username=getattr(info, "db_user", ""),
+            password=getattr(info, "db_password", "") or "",
+        )
+
+    @classmethod
     def load(cls, requirer: DatabaseRequires) -> "DatabaseConfig":
         """Load database settings from the database relation requirer helper."""
         if not hasattr(requirer, "relations") or not requirer.relations:
@@ -93,11 +106,22 @@ class DatabaseConfig:
 class DatabaseRelationHandler:
     """Coordinates PostgreSQL client relations and environment parsing."""
 
-    def __init__(self, charm, relation_name: str = "database", database_name: str = "authorization_service") -> None:
+    def __init__(
+        self,
+        charm,
+        relation_name: str = "database",
+        database_name: str = "authorization_service",
+        extra_user_roles: str = "admin",
+    ) -> None:
         self.charm = charm
         self.relation_name = relation_name
         self.database_name = database_name
-        self.postgres = DatabaseRequires(charm, relation_name=relation_name, database_name=database_name)
+        self.postgres = DatabaseRequires(
+            charm,
+            relation_name=relation_name,
+            database_name=database_name,
+            extra_user_roles=extra_user_roles,
+        )
 
     @property
     def config(self) -> DatabaseConfig:

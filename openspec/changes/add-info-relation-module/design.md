@@ -6,22 +6,31 @@ This technical design details the implementation of the `authorization_service_o
 ## Architectural Design
 
 ### 1. Data Schema
-`AuthorizationServiceInfo` is a frozen dataclass representing version metadata exchanged over the relation:
+`AuthorizationServiceInfo` is a dataclass representing version metadata and database credentials exchanged over the relation:
 - `workload_version`: `str | None` - Version of the application workload running in the container.
 - `migration_version`: `str | None` - Version of database schema migrations completed by the Server charm.
-- `is_ready`: Property returning `True` if both `workload_version` and `migration_version` are non-empty strings.
+- `openfga_store_id`: `str | None` - OpenFGA store ID created by the Server charm.
+- `openfga_model_id`: `str | None` - OpenFGA model ID created by the Server charm.
+- `db_host`: `str | None` - PostgreSQL database host.
+- `db_port`: `str | None` - PostgreSQL database port.
+- `db_name`: `str | None` - PostgreSQL database name.
+- `db_user`: `str | None` - PostgreSQL database username.
+- `db_secret_id`: `str | None` - Juju secret ID containing `db-password`.
+- `db_password`: `str | None` - Database password retrieved from Juju secret.
+- `is_ready`: Property returning `True` if `workload_version` and `migration_version` are non-empty.
+- `is_db_ready`: Property returning `True` if `db_host`, `db_port`, `db_name`, `db_user`, and `db_password` are non-empty strings.
 
 ### 2. Relation Provider (`AuthorizationServiceInfoProvider`)
 - Inherits from `ops.Object`.
-- Exposes `self.on.authorization_service_info_relation_ready` (`AuthorizationServiceInfoRelationReadyEvent`).
+- Exposes `self.on.authorization_service_info_relation_ready` (`AuthorizationServiceInfoReadyEvent`).
 - Handles `relation_joined` events on `authorization-service-info` and emits `authorization_service_info_relation_ready`.
-- `publish_info(workload_version: str, migration_version: str)`: Leader-only method that writes `workload_version` and `migration_version` to `relation.data[self.charm.app]`.
+- `publish_info(...)`: Leader-only method that writes `workload_version`, `migration_version`, `openfga_store_id`, `openfga_model_id`, `db_host`, `db_port`, `db_name`, `db_user`, and `db_secret_id` to `relation.data[self.charm.app]`. Automatically creates/updates Juju secret containing `{"db-password": db_password}` and grants access to connected relations.
 
 ### 3. Relation Requirer (`AuthorizationServiceInfoRequirer`)
 - Inherits from `ops.Object`.
 - Exposes `self.on.authorization_service_info_broken` (`AuthorizationServiceInfoBrokenEvent`).
 - Handles `relation_broken` events on `authorization-service-info` and emits `authorization_service_info_broken`.
-- `get_info() -> AuthorizationServiceInfo | None`: Reads the relation app databag and returns an `AuthorizationServiceInfo` instance (or `None` if relation is absent or missing data).
+- `get_info() -> AuthorizationServiceInfo | None`: Reads relation app databag, fetches secret content via `db_secret_id`, and returns an `AuthorizationServiceInfo` instance (or `None` if relation is absent or missing data).
 
 ### 4. Sequence & Status Lifecycle
 ```
@@ -29,11 +38,12 @@ This technical design details the implementation of the `authorization_service_o
 |  Server Charm  |            | authorization-info  |            |  Worker Charm  |
 +----------------+            +---------------------+            +----------------+
 | Run migration  |                                               |                |
-| peer_data set  |                                               |                |
+| Add DB secret  |                                               |                |
 |                | <--- relation_joined -----                    | Join relation  |
-| Emit ready evt |                                               |                |
-| Publish info   | ---- app_databag write --> [ versions ] ----> | get_info()     |
-|                |                                               | Compare ver    |
+| Grant DB secret|                                               |                |
+| Publish info   | ---- app_databag write --> [ credentials ] -> | get_info()     |
+|                |                                               | Read secret    |
+|                |                                               | Config DB      |
 +----------------+                                               +----------------+
 ```
-If the worker's workload version does not match `info.migration_version`, the worker sets `WaitingStatus("Waiting for database migration to match workload version")`.
+If the worker's workload version does not match `info.migration_version`, the worker sets `WaitingStatus("Waiting for the server to run migration")`.
