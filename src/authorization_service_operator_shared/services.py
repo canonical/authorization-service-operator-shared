@@ -40,17 +40,19 @@ DEFAULT_CONTAINER_ENV: EnvVars = {
 def make_pebble_layer_dict(
     command: str = f"{APP_BINARY} serve",
     service_name: str = PEBBLE_SERVICE_NAME,
+    include_checks: bool = True,
 ) -> LayerDict:
     """Generate a Pebble layer dictionary with configurable service name and command.
 
     Args:
         command: Command string to execute for the service.
         service_name: Pebble service name.
+        include_checks: Whether to include HTTP readiness checks in the layer.
 
     Returns:
         Pebble LayerDict structure.
     """
-    return {
+    layer_dict: LayerDict = {
         "summary": f"{service_name} layer",
         "services": {
             service_name: {
@@ -58,17 +60,19 @@ def make_pebble_layer_dict(
                 "summary": "Authorization Service",
                 "command": command,
                 "startup": "disabled",
-                "on-check-failure": {"ready": "restart"},
             }
         },
-        "checks": {
+    }
+    if include_checks:
+        layer_dict["services"][service_name]["on-check-failure"] = {"ready": "restart"}  # type: ignore[index]
+        layer_dict["checks"] = {
             "ready": {
                 "override": "replace",
                 "level": "ready",
                 "http": {"url": f"http://localhost:{HTTP_PORT}/healthz"},
             }
-        },
-    }
+        }
+    return layer_dict
 
 
 class PebbleService:
@@ -94,6 +98,7 @@ class PebbleService:
         self,
         *env_var_sources: EnvVarConvertible,
         command: str | None = None,
+        include_checks: bool = True,
     ) -> Layer:
         """Build the Pebble layer by merging environment variable sources.
 
@@ -101,6 +106,7 @@ class PebbleService:
             *env_var_sources: Objects implementing EnvVarConvertible. Their
                 to_env_vars() outputs are merged in order over DEFAULT_CONTAINER_ENV.
             command: Optional command override for the Pebble service.
+            include_checks: Whether to include HTTP readiness checks in the layer.
 
         Returns:
             A Pebble Layer with the merged environment.
@@ -118,7 +124,9 @@ class PebbleService:
             env.update({k: str(v) for k, v in source_env.items() if v is not None})
 
         cmd = command or self.command
-        base_layer_dict = make_pebble_layer_dict(command=cmd, service_name=self.service_name)
+        base_layer_dict = make_pebble_layer_dict(
+            command=cmd, service_name=self.service_name, include_checks=include_checks
+        )
         layer_dict: LayerDict = {
             **base_layer_dict,
             "services": {
