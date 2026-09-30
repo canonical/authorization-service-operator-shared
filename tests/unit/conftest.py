@@ -53,14 +53,33 @@ class MockStsInfoRequirer:
 class MockKafkaRequires:
     """Mock for KafkaRequires charmlib class."""
 
-    def __init__(self, charm, relation_name="kafka", topic="authorization-service"):
+    def __init__(
+        self,
+        charm,
+        relation_name="kafka",
+        topic="authorization-service.permissions",
+        extra_user_roles="consumer",
+        consumer_group_prefix=None,
+    ):
         self.charm = charm
         self.relation_name = relation_name
         self.topic = topic
+        self.extra_user_roles = extra_user_roles
+        self.consumer_group_prefix = consumer_group_prefix
         self._is_ready = True
 
     def fetch_relation_data(self, relation_ids=None, fields=None, relation_name=None):
-        return {1: {"endpoints": "kafka-broker:9092"}}
+        return {
+            1: {
+                "endpoints": "kafka-broker:9092",
+                "username": "user",
+                "password": "password",
+                "tls": "disabled",
+            }
+        }
+
+    def update_relation_data(self, relation_id: int, data: dict) -> None:
+        self.updated_data = data
 
 
 class MockMetricsEndpointProvider:
