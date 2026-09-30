@@ -41,6 +41,7 @@ def make_pebble_layer_dict(
     command: str = f"{APP_BINARY} serve",
     service_name: str = PEBBLE_SERVICE_NAME,
     include_checks: bool = True,
+    check_url: str = f"http://localhost:{HTTP_PORT}/healthz",
 ) -> LayerDict:
     """Generate a Pebble layer dictionary with configurable service name and command.
 
@@ -48,6 +49,7 @@ def make_pebble_layer_dict(
         command: Command string to execute for the service.
         service_name: Pebble service name.
         include_checks: Whether to include HTTP readiness checks in the layer.
+        check_url: URL for the HTTP readiness check. Defaults to http://localhost:{HTTP_PORT}/healthz.
 
     Returns:
         Pebble LayerDict structure.
@@ -69,7 +71,7 @@ def make_pebble_layer_dict(
             "ready": {
                 "override": "replace",
                 "level": "ready",
-                "http": {"url": f"http://localhost:{HTTP_PORT}/healthz"},
+                "http": {"url": check_url},
             }
         }
     return layer_dict
@@ -99,6 +101,7 @@ class PebbleService:
         *env_var_sources: EnvVarConvertible,
         command: str | None = None,
         include_checks: bool = True,
+        check_url: str = f"http://localhost:{HTTP_PORT}/healthz",
     ) -> Layer:
         """Build the Pebble layer by merging environment variable sources.
 
@@ -107,6 +110,7 @@ class PebbleService:
                 to_env_vars() outputs are merged in order over DEFAULT_CONTAINER_ENV.
             command: Optional command override for the Pebble service.
             include_checks: Whether to include HTTP readiness checks in the layer.
+            check_url: URL for the HTTP readiness check. Defaults to http://localhost:{HTTP_PORT}/healthz.
 
         Returns:
             A Pebble Layer with the merged environment.
@@ -125,7 +129,10 @@ class PebbleService:
 
         cmd = command or self.command
         base_layer_dict = make_pebble_layer_dict(
-            command=cmd, service_name=self.service_name, include_checks=include_checks
+            command=cmd,
+            service_name=self.service_name,
+            include_checks=include_checks,
+            check_url=check_url,
         )
         layer_dict: LayerDict = {
             **base_layer_dict,
@@ -217,10 +224,21 @@ class WorkloadService:
             return False
 
     def is_failing(self) -> bool:
-        """Return True if the ready check is in a failure state."""
+        """Return True if the service has crashed or ready check has failed."""
+        try:
+            svc = self._container.get_service(self.service_name)
+            if svc.current == ops.pebble.ServiceStatus.ERROR:
+                return True
+        except (ops.pebble.ConnectionError, ops.model.ModelError):
+            return False
+        except Exception as e:
+            logger.debug("Failed to inspect service status, falling through to ready check: %s", e)
+
         try:
             check = self._container.get_check("ready")
             return check.status == ops.pebble.CheckStatus.DOWN
+        except (ops.pebble.ConnectionError, ops.model.ModelError):
+            return False
         except Exception:
             return False
 
