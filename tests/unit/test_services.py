@@ -68,6 +68,21 @@ def test_render_pebble_layer_has_ready_check() -> None:
     assert checks["ready"]["http"]["url"] == f"http://localhost:{HTTP_PORT}/healthz"
 
 
+def test_render_pebble_layer_custom_check_url() -> None:
+    svc, _ = _pebble_service()
+    layer = svc.render_pebble_layer(check_url="http://localhost:9100/metrics")
+    checks = layer.to_dict().get("checks", {})
+    assert checks["ready"]["http"]["url"] == "http://localhost:9100/metrics"
+
+
+def test_render_pebble_layer_without_checks() -> None:
+    svc, _ = _pebble_service()
+    layer = svc.render_pebble_layer(include_checks=False)
+    layer_dict = layer.to_dict()
+    assert "checks" not in layer_dict
+    assert "on-check-failure" not in layer_dict["services"][PEBBLE_SERVICE_NAME]
+
+
 def test_plan_starts_when_service_not_running() -> None:
     svc, container = _pebble_service()
     container.get_service.return_value.is_running.return_value = False
@@ -172,6 +187,25 @@ def test_is_failing_false_when_check_up() -> None:
 
 def test_is_failing_true_when_check_down() -> None:
     svc, _, _, container = _workload_service()
+    container.get_check.return_value.status = ops.pebble.CheckStatus.DOWN
+    assert svc.is_failing() is True
+
+
+def test_is_failing_true_when_service_in_error() -> None:
+    svc, _, _, container = _workload_service()
+    container.get_service.return_value.current = ops.pebble.ServiceStatus.ERROR
+    assert svc.is_failing() is True
+
+
+def test_is_failing_false_on_connection_error() -> None:
+    svc, _, _, container = _workload_service()
+    container.get_service.side_effect = ops.pebble.ConnectionError("cannot connect")
+    assert svc.is_failing() is False
+
+
+def test_is_failing_falls_through_when_service_missing() -> None:
+    svc, _, _, container = _workload_service()
+    container.get_service.side_effect = RuntimeError("service missing")
     container.get_check.return_value.status = ops.pebble.CheckStatus.DOWN
     assert svc.is_failing() is True
 

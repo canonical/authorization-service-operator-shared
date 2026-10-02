@@ -136,6 +136,29 @@ def test_kafka_relation_handler_is_ready_false_when_no_relation():
     assert handler.is_ready() is False
 
 
+def test_kafka_relation_handler_default_topic():
+    charm = _make_mock_charm("kafka")
+    handler = KafkaRelationHandler(charm)
+    assert handler.topic == "authorization-service.permissions"
+    assert handler.kafka.topic == "authorization-service.permissions"
+    assert handler.kafka.extra_user_roles == "producer,consumer"
+    assert handler.kafka.consumer_group_prefix == "authorization-service"
+
+
+def test_kafka_relation_handler_custom_topic_and_roles():
+    charm = _make_mock_charm("kafka")
+    handler = KafkaRelationHandler(
+        charm,
+        consumer_group="my-group",
+        topic="my-topic",
+        extra_user_roles="consumer,admin",
+    )
+    assert handler.topic == "my-topic"
+    assert handler.kafka.topic == "my-topic"
+    assert handler.kafka.extra_user_roles == "consumer,admin"
+    assert handler.kafka.consumer_group_prefix == "my-group"
+
+
 def test_kafka_relation_handler_get_env_vars():
     charm = _make_mock_charm("kafka")
     handler = KafkaRelationHandler(charm, consumer_group="test-group")
@@ -143,6 +166,40 @@ def test_kafka_relation_handler_get_env_vars():
     assert env["KAFKA_ENABLED"] == "true"
     assert env["KAFKA_BROKERS"] == "kafka-broker:9092"
     assert env["KAFKA_CONSUMER_GROUP"] == "test-group"
+    assert env["KAFKA_SASL_USERNAME"] == "user"
+    assert env["KAFKA_SASL_PASSWORD"] == "password"
+    assert env["KAFKA_TLS_ENABLED"] == "false"
+    assert "FEDERATED_SERVICES" not in env
+
+
+def test_kafka_relation_handler_federated_services():
+    charm = _make_mock_charm("kafka")
+    handler = KafkaRelationHandler(
+        charm,
+        consumer_group="test-group",
+        federated_services="identity,billing",
+    )
+    env = handler.get_env_vars()
+    assert env["FEDERATED_SERVICES"] == "identity,billing"
+
+
+def test_kafka_relation_handler_tls_ca_when_enabled():
+    charm = _make_mock_charm("kafka")
+    handler = KafkaRelationHandler(charm, consumer_group="test-group")
+    handler.kafka.fetch_relation_data = MagicMock(
+        return_value={
+            1: {
+                "endpoints": "kafka-broker:9092",
+                "username": "user",
+                "password": "password",
+                "tls": "enabled",
+                "tls-ca": "cert-data",
+            }
+        }
+    )
+    env = handler.get_env_vars()
+    assert env["KAFKA_TLS_ENABLED"] == "true"
+    assert env["KAFKA_TLS_CA"] == "cert-data"
 
 
 # ── Observability Relation Handlers Tests ─────────────────────────────────────
