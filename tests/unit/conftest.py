@@ -50,6 +50,53 @@ class MockStsInfoRequirer:
         return self._sts_info
 
 
+class MockKafkaRequestModel:
+    """Mock for KafkaRequestModel charmlib class."""
+
+    def __init__(self, *args, **kwargs):
+        self.topic = kwargs.get("topic", "")
+        self.resource = kwargs.get("topic") or kwargs.get("resource", "")
+        self.extra_user_roles = kwargs.get("extra_user_roles")
+        self.consumer_group_prefix = kwargs.get("consumer_group_prefix")
+
+
+class MockKafkaResponseModel:
+    """Mock for KafkaResponseModel charmlib class."""
+
+    def __init__(self, *args, **kwargs):
+        self.endpoints = kwargs.get("endpoints", "")
+        self.username = kwargs.get("username", "")
+        self.password = kwargs.get("password", "")
+        self.tls = kwargs.get("tls", False)
+        self.tls_ca = kwargs.get("tls_ca", "")
+
+
+class MockResourceRequirerEventHandler:
+    """Mock for ResourceRequirerEventHandler charmlib class."""
+
+    def __init__(self, charm, relation_name="kafka", requests=None, response_model=None):
+        self.charm = charm
+        self.relation_name = relation_name
+        self.requests = requests or []
+        self.response_model = response_model
+        self.extra_user_roles = self.requests[0].extra_user_roles if self.requests else None
+        self.consumer_group_prefix = self.requests[0].consumer_group_prefix if self.requests else None
+        self.topic = (
+            getattr(self.requests[0], "topic", getattr(self.requests[0], "resource", "")) if self.requests else ""
+        )
+        self.on = getattr(charm, "on", MagicMock())
+        self.interface = MagicMock()
+        mock_response = MagicMock()
+        mock_req = MagicMock()
+        mock_req.endpoints = "kafka-broker:9092"
+        mock_req.username = "user"
+        mock_req.password = "password"
+        mock_req.tls = False
+        mock_req.tls_ca = ""
+        mock_response.requests = [mock_req]
+        self.interface.build_model.return_value = mock_response
+
+
 class MockKafkaRequires:
     """Mock for KafkaRequires charmlib class."""
 
@@ -117,6 +164,12 @@ _mock_module(
     "charms.data_platform_libs.v0.data_interfaces",
     DatabaseRequires=MockDatabaseRequires,
     KafkaRequires=MockKafkaRequires,
+)
+_mock_module(
+    "charms.data_platform_libs.v1.data_interfaces",
+    KafkaRequestModel=MockKafkaRequestModel,
+    KafkaResponseModel=MockKafkaResponseModel,
+    ResourceRequirerEventHandler=MockResourceRequirerEventHandler,
 )
 _mock_module("charms.postgresql_k8s.v0.postgresql", PostgreSQLRequires=MockDatabaseRequires)
 _mock_module("charms.secure_token_service.v0.sts_info", StsInfoRequirer=MockStsInfoRequirer)

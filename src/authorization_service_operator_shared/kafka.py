@@ -7,16 +7,34 @@ import logging
 from typing import Any
 
 try:
-    from charms.data_platform_libs.v0.data_interfaces import KafkaRequires
+    from charms.data_platform_libs.v1.data_interfaces import (
+        KafkaRequestModel,
+        KafkaResponseModel,
+        ResourceRequirerEventHandler,
+    )
 except ImportError:
 
-    class KafkaRequires:  # type: ignore[no-redef]
-        """Fallback provider when charms.data_platform_libs is not available."""
+    class KafkaRequestModel:  # type: ignore[no-redef]
+        """Fallback request model when charms.data_platform_libs is not available."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.topic = kwargs.get("topic", "")
+            self.resource = kwargs.get("topic") or kwargs.get("resource", "")
             self.extra_user_roles = kwargs.get("extra_user_roles")
             self.consumer_group_prefix = kwargs.get("consumer_group_prefix")
+
+    class KafkaResponseModel:  # type: ignore[no-redef]
+        """Fallback response model when charms.data_platform_libs is not available."""
+
+    class ResourceRequirerEventHandler:  # type: ignore[no-redef]
+        """Fallback requirer when charms.data_platform_libs is not available."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            reqs = kwargs.get("requests", [])
+            self.extra_user_roles = reqs[0].extra_user_roles if reqs else None
+            self.consumer_group_prefix = reqs[0].consumer_group_prefix if reqs else None
+            self.topic = getattr(reqs[0], "topic", getattr(reqs[0], "resource", "")) if reqs else ""
+            self.on = getattr(args[0], "on", None) if args else None
 
 
 logger = logging.getLogger(__name__)
@@ -30,32 +48,50 @@ class KafkaRelationHandler:
         charm,
         relation_name: str = "kafka",
         consumer_group: str = "authorization-service",
-        topic: str = "authorization-service.permissions",
         extra_user_roles: str = "producer,consumer",
-        federated_services: str = "",
+        topic: str = "permissions.authorization_service",
     ):
         self.charm = charm
         self.relation_name = relation_name
         self.consumer_group = consumer_group
         self.topic = topic
         self.extra_user_roles = extra_user_roles
-        self.federated_services = federated_services
-        self.kafka = KafkaRequires(
+        self.kafka = ResourceRequirerEventHandler(
             charm,
             relation_name=relation_name,
-            topic=topic,
-            extra_user_roles=extra_user_roles,
-            consumer_group_prefix=consumer_group,
+            requests=[
+                KafkaRequestModel(
+                    topic=topic,
+                    extra_user_roles=extra_user_roles,
+                    consumer_group_prefix=consumer_group,
+                )
+            ],
+            response_model=KafkaResponseModel,
         )
 
     def _get_relation_data(self) -> dict[str, str]:
-        """Fetch all Kafka relation fields from the relation that has endpoints."""
-        fields = ["endpoints", "username", "password", "tls", "tls-ca"]
-        if hasattr(self.kafka, "fetch_relation_data"):
-            rel_data = self.kafka.fetch_relation_data(fields=fields)
-            for data in rel_data.values():
-                if data.get("endpoints"):
-                    return {k: str(v) for k, v in data.items() if v is not None}
+        """Fetch Kafka relation data using V1 model."""
+        relation = self.charm.model.get_relation(self.relation_name)
+        if not relation or not relation.app:
+            return {}
+
+        try:
+            model = self.kafka.interface.build_model(relation.id, component=relation.app)
+            for req in getattr(model, "requests", []):
+                if req.endpoints:
+                    data = {"endpoints": req.endpoints}
+                    if req.username:
+                        data["username"] = str(req.username)
+                    if req.password:
+                        data["password"] = str(req.password)
+                    if req.tls is not None:
+                        data["tls"] = str(req.tls).lower()
+                    if req.tls_ca:
+                        data["tls-ca"] = str(req.tls_ca)
+                    return data
+        except Exception:
+            logger.debug("Failed to build V1 model from relation data", exc_info=True)
+
         return {}
 
     @property
@@ -84,14 +120,14 @@ class KafkaRelationHandler:
         return self._get_relation_data().get("tls-ca", "")
 
     def is_ready(self) -> bool:
-        """Checks if Kafka details are ready in the relation databag."""
+        """Check if Kafka relation is present and endpoints are provided."""
         relation = self.charm.model.get_relation(self.relation_name)
-        if not relation or not relation.units:
+        if not relation:
             return False
         return bool(self.bootstrap_server)
 
     def get_env_vars(self) -> dict[str, str]:
-        """Parses relation details and returns standard Go-binary Kafka environment variables."""
+        """Parse relation details and return Go-binary Kafka environment variables."""
         if not self.is_ready():
             return {}
 
@@ -100,13 +136,8 @@ class KafkaRelationHandler:
             "KAFKA_ENABLED": "true",
             "KAFKA_BROKERS": rel_data.get("endpoints", ""),
             "KAFKA_CONSUMER_GROUP": self.consumer_group,
+            "FEDERATED_SERVICES_STRATEGY": "fs",
         }
-        if self.federated_services:
-            env["FEDERATED_SERVICES"] = self.federated_services
-        if username := rel_data.get("username"):
-            env["KAFKA_SASL_USERNAME"] = username
-        if password := rel_data.get("password"):
-            env["KAFKA_SASL_PASSWORD"] = password
         if tls := rel_data.get("tls"):
             is_tls = str(tls).lower() in ("enabled", "true")
             env["KAFKA_TLS_ENABLED"] = str(is_tls).lower()
