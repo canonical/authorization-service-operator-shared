@@ -62,6 +62,28 @@ def test_database_relation_handler_get_env_vars():
     assert env["POSTGRES_DB"] == "test_db"
 
 
+def test_database_relation_handler_default_extra_user_roles_empty():
+    """Default must request no extra roles: pgbouncer rejects the legacy ``admin`` group.
+
+    ``admin`` is a legacy machine-postgresql permission group, not a PostgreSQL
+    role nor one of the privileges (``createdb``/``createrole``/``superuser``)
+    accepted by Charmed PgBouncer's vendored postgresql library. Requesting it
+    leaves the pgbouncer unit in BlockedStatus("invalid role(s) for extra user
+    roles"), so the shared default must stay empty.
+    """
+    charm = _make_mock_charm("database")
+    handler = DatabaseRelationHandler(charm)
+    assert handler.postgres.extra_user_roles == ""
+    assert handler.extra_user_roles == ""
+
+
+def test_database_relation_handler_explicit_extra_user_roles_passthrough():
+    """Explicit extra roles are passed through verbatim to the requirer."""
+    charm = _make_mock_charm("database")
+    handler = DatabaseRelationHandler(charm, extra_user_roles="createdb,createrole")
+    assert handler.postgres.extra_user_roles == "createdb,createrole"
+    assert handler.extra_user_roles == "createdb,createrole"
+
 # ── OpenFGARelationHandler Tests ──────────────────────────────────────────────
 
 

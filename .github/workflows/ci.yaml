@@ -1,0 +1,28 @@
+name: ci
+run-name: CI for ${{ github.sha }} on ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "release-**"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  linting:
+    name: Linting
+    uses: canonical/identity-team/.github/workflows/_charm-linting.yaml@d4ec4d65ae3cdd37b223a0fb5ecf7e87866e20e0 # v1.19.0
+    with:
+      base: "22.04"
+
+  unit-test:
+    name: Unit Tests
+    needs:
+      - linting
+    uses: canonical/identity-team/.github/workflows/_charm-tests-unit.yaml@d4ec4d65ae3cdd37b223a0fb5ecf7e87866e20e0 # v1.19.0
+    with:
+      tox-unit-test-targets: unit
+      base: "22.04"
