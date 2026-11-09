@@ -104,18 +104,37 @@ class DatabaseConfig:
 
 
 class DatabaseRelationHandler:
-    """Coordinates PostgreSQL client relations and environment parsing."""
+    """Coordinates PostgreSQL client relations and environment parsing.
+
+    Args:
+        charm: The charm instance owning the relation.
+        relation_name: Name of the ``postgresql_client`` relation (default: "database").
+        database_name: Database requested from the provider.
+        extra_user_roles: Comma-separated roles/privileges requested for the
+            relation user, on top of the default database/schema ownership the
+            provider grants. Empty (the default) requests no extra roles.
+
+    Note:
+        The previous default of ``admin`` is rejected by Charmed PgBouncer
+        (both machine and k8s) with ``invalid role(s) for extra user roles``:
+        ``admin`` is a legacy machine-postgresql permission group, not a
+        PostgreSQL role or one of the privileges pgbouncer's vendored
+        ``postgresql`` library accepts (``createdb``, ``createrole``,
+        ``superuser``). Consumers that genuinely need extra privileges should
+        pass them explicitly.
+    """
 
     def __init__(
         self,
         charm,
         relation_name: str = "database",
         database_name: str = "authorization_service",
-        extra_user_roles: str = "admin",
+        extra_user_roles: str = "",
     ) -> None:
         self.charm = charm
         self.relation_name = relation_name
         self.database_name = database_name
+        self.extra_user_roles = extra_user_roles
         self.postgres = DatabaseRequires(
             charm,
             relation_name=relation_name,

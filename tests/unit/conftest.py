@@ -15,6 +15,7 @@ class MockDatabaseRequires:
         self.charm = charm
         self.relation_name = relation_name
         self.database_name = database_name
+        self.extra_user_roles = extra_user_roles
         self.relations = [MagicMock(id=0)]
         self._is_ready = True
         self._credentials = {
