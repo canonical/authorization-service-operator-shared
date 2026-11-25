@@ -10,6 +10,7 @@ from authorization_service_operator_shared.kafka import KafkaRelationHandler
 from authorization_service_operator_shared.observability import (
     GrafanaDashboardHandler,
     MetricsRelationHandler,
+    TracingConfig,
 )
 from authorization_service_operator_shared.openfga import OpenFGARelationHandler
 from authorization_service_operator_shared.sts import STSRelationHandler
@@ -229,3 +230,34 @@ def test_grafana_dashboard_handler_init():
     charm = MagicMock()
     handler = GrafanaDashboardHandler(charm, relation_name="my-dashboard")
     assert handler.relation_name == "my-dashboard"
+
+
+def test_tracing_config_load_not_ready():
+    requirer = MagicMock()
+    requirer.is_ready.return_value = False
+    cfg = TracingConfig.load(requirer, service_name="authorization-service-worker")
+    assert cfg.is_ready is False
+    assert cfg.to_env_vars() == {}
+
+
+def test_tracing_config_load_otlp_grpc():
+    requirer = MagicMock()
+    requirer.is_ready.return_value = True
+    requirer.get_endpoint.return_value = "tempo:4317"
+    cfg = TracingConfig.load(requirer, service_name="authorization-service-worker")
+    requirer.get_endpoint.assert_called_once_with("otlp_grpc")
+    assert cfg.is_ready is True
+    assert cfg.to_env_vars() == {
+        "TELEMETRY_ENABLED": "true",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "tempo:4317",
+        "OTEL_SERVICE_NAME": "authorization-service-worker",
+    }
+
+
+def test_tracing_config_load_handles_get_endpoint_exception():
+    requirer = MagicMock()
+    requirer.is_ready.return_value = True
+    requirer.get_endpoint.side_effect = RuntimeError("permission denied")
+    cfg = TracingConfig.load(requirer, service_name="authorization-service-worker")
+    assert cfg.is_ready is False
+    assert cfg.to_env_vars() == {}

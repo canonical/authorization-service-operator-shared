@@ -56,10 +56,17 @@ class TracingConfig:
     @classmethod
     def load(cls, requirer, service_name: str = "authorization-service") -> "TracingConfig":
         """Load tracing settings from the tracing relation requirer helper."""
-        if not hasattr(requirer, "is_ready") or not requirer.is_ready():
+        if not hasattr(requirer, "is_ready"):
             return cls(service_name=service_name)
 
-        endpoint = requirer.get_endpoint("otlp_http")
+        try:
+            if not requirer.is_ready():
+                return cls(service_name=service_name)
+            endpoint = requirer.get_endpoint("otlp_grpc")
+        except Exception as exc:
+            logger.debug("Failed to retrieve otlp_grpc endpoint: %s", exc)
+            return cls(service_name=service_name)
+
         if not endpoint:
             return cls(service_name=service_name)
 
