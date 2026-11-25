@@ -13,3 +13,14 @@ The library SHALL provide a class `GrafanaDashboardHandler` that wraps the Juju 
 #### Scenario: Grafana dashboard provider initialization
 - **WHEN** the Grafana handler is instantiated on a charm instance
 - **THEN** it SHALL register a `GrafanaDashboardProvider` instance binding the charm's default local `/src/grafana_dashboards` specifications to the specified relation name
+
+### Requirement: OpenTelemetry Tracing Configuration
+The library SHALL provide a `TracingConfig` dataclass that loads the `otlp_grpc` endpoint from a `TracingEndpointRequirer` instance and converts it into workload environment variables.
+
+#### Scenario: Tracing endpoint ready
+- **WHEN** `TracingConfig.load` is called with a ready `TracingEndpointRequirer` providing an `otlp_grpc` endpoint
+- **THEN** `to_env_vars()` SHALL return `TELEMETRY_ENABLED="true"`, `OTEL_EXPORTER_OTLP_ENDPOINT` set to the `otlp_grpc` endpoint (`host:port`), and `OTEL_SERVICE_NAME`
+
+#### Scenario: Tracing endpoint not ready or inaccessible
+- **WHEN** `TracingConfig.load` is called when the requirer is not ready or `get_endpoint("otlp_grpc")` raises an error (such as on non-leader units before the protocol is available)
+- **THEN** `TracingConfig.load` SHALL return an unready `TracingConfig` whose `to_env_vars()` returns `{}`
