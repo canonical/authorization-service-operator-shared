@@ -32,7 +32,7 @@ authorization-service-operator-shared/
         ├── openfga.py          # OpenFGARelationHandler (wraps openfga relation)
         ├── sts.py              # STSRelationHandler (wraps STS relation)
         ├── kafka.py            # KafkaRelationHandler (wraps kafka relation)
-        ├── observability.py    # MetricsRelationHandler (scrape endpoint) & GrafanaDashboardHandler
+        ├── observability.py    # MetricsRelationHandler, GrafanaDashboardHandler, & TracingConfig (otlp_grpc)
         ├── cli.py              # CommandLine wrapper for the binary via Pebble exec
         ├── configs.py          # Shared CharmConfig helper parsing proxies, log levels
         ├── exceptions.py       # Custom exception hierarchy

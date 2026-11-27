@@ -13,7 +13,7 @@ In addition to relation handlers, the sister operators share identical foundatio
   - `OpenFGARelationHandler`: Unified OpenFGA connection details parser.
   - `STSRelationHandler`: Secure Token Service integration mapper.
   - `KafkaRelationHandler`: Kafka broker details mapper.
-  - `MetricsRelationHandler` and `GrafanaDashboardHandler`: Centralized Prometheus scrapers and automated dashboard packaging.
+  - `MetricsRelationHandler`, `GrafanaDashboardHandler`, and `TracingConfig`: Centralized Prometheus scrapers, automated dashboard packaging, and OTLP gRPC tracing configuration.
 - **Extract Reusable Operational Modules**:
   - `cli`: Reusable command runner utilizing Pebble exec for running migrations, checking migration statuses, fetching versions, and creating OpenFGA models.
   - `configs`: Unified charm configuration helpers to parse developer modes, proxy settings, and logging levels.

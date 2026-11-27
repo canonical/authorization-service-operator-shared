@@ -19,7 +19,7 @@
 - [x] 3.2 Implement `openfga.py` containing `OpenFGARelationHandler` to extract OpenFGA store IDs, authentication tokens, and server addresses.
 - [x] 3.3 Implement `sts.py` containing `STSRelationHandler` to map Secure Token Service endpoints and credentials.
 - [x] 3.4 Implement `kafka.py` containing `KafkaRelationHandler` to decode Kafka broker configurations.
-- [x] 3.5 Implement `observability.py` containing `MetricsRelationHandler` and `GrafanaDashboardHandler` to configure Prometheus scrapes and Grafana dashboard files.
+- [x] 3.5 Implement `observability.py` containing `MetricsRelationHandler`, `GrafanaDashboardHandler`, and `TracingConfig` (`otlp_grpc`) to configure Prometheus scrapes, Grafana dashboard files, and OpenTelemetry tracing.
 
 ## 4. Testing & Verification
 
